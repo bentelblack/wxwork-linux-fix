@@ -97,5 +97,5 @@ python3 -I tests/test_runtime.py -v
 ## 赞赏
 
 如果这个仓库对您有用，可以点个 star 或使用微信扫描赞赏码。
+<img width="595" height="569" alt="85a452b916f05293884a7d19f2933f36" src="https://github.com/user-attachments/assets/665807c4-8126-47c0-9d46-779427467364" />
 
-<img width="442" height="442" alt="赞赏码" src="https://github.com/user-attachments/assets/5e6704b0-978c-48d5-8408-ea7bcd5677b8" />
