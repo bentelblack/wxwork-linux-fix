@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+F=/opt/apps/com.qq.weixin.work.deepin/files
+# Wine 二进制（引擎和官方 dlls/wineserver）把安装根编译为 /opt/deepin-wine10-stable，
+# 用符号链接让它指向包内引擎；目标被其他软件占用时拒绝配置，不覆盖。
+COMPAT=/opt/deepin-wine10-stable
+if [ "${1:-}" = configure ]; then
+    ORIGINAL="$F/wine-orig/lib/wine/i386-windows/kernelbase.dll"
+    test -f "$ORIGINAL"
+    if [ -L "$COMPAT" ]; then
+        [ "$(readlink "$COMPAT")" = "$F/wine" ] || { echo "安装位置冲突：$COMPAT 已指向 $(readlink "$COMPAT")" >&2; exit 1; }
+    elif [ -e "$COMPAT" ]; then
+        echo "安装位置冲突：$COMPAT 已存在，未覆盖" >&2
+        exit 1
+    else
+        ln -s "$F/wine" "$COMPAT"
+    fi
+    rm -rf "$F/wine-update"
+    cp -al "$F/wine/." "$F/wine-update"
+    TARGET="$F/wine-update/lib/wine/i386-windows/kernelbase.dll"
+    # 必须先解除硬链接，不能原地写坏日常引擎。
+    rm -f "$TARGET"
+    cp -p "$ORIGINAL" "$TARGET"
+fi
+exit 0

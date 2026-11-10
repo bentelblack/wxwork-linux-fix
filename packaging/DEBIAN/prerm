@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+F=/opt/apps/com.qq.weixin.work.deepin/files
+COMPAT=/opt/deepin-wine10-stable
+rm -rf "$F/wine-update"
+if [ -L "$COMPAT" ] && [ "$(readlink "$COMPAT")" = "$F/wine" ]; then
+    rm -f "$COMPAT"
+fi
+exit 0

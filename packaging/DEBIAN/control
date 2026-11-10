@@ -1,0 +1,15 @@
+Package: com.qq.weixin.work.deepin
+Version: @VERSION@
+Architecture: amd64
+Maintainer: WXWork Bundle Maintainer <maintainer@example.com>
+Installed-Size: 0
+Section: non-free/net
+Priority: optional
+Depends: libc6 (>= 2.26), libx11-6, libxext6, libfreetype6, libfontconfig1, libgl1, xz-utils, python3, util-linux, pciutils
+Recommends: libasound2t64 | libasound2, libpulse0, libxcomposite1, libxcursor1, libxfixes3, libxi6, libxinerama1, libxrandr2, libxrender1, libgnutls30t64 | libgnutls30, libdbus-1-3, libgl1, libglu1-mesa, libgstreamer1.0-0, libgstreamer-plugins-base1.0-0, libv4l-0t64 | libv4l-0, libcups2t64 | libcups2, xdg-user-dirs, libnotify-bin
+Description: Tencent WXWork with bundled deepin-wine 10.14
+ 企业微信 Windows 版，自带 deepin 官方 wine 10.14deepin14，
+ 基于官方容器并额外加载配套的32位 kernelbase，修复内嵌网页展示异常。
+ 右键“更新兼容模式”使用原版 kernelbase；在线更新仍需按版本验证。
+ 不依赖系统 deepin-wine，首次启动部署到
+ ~/.deepinwine/WXWork-official-bundled，不自动迁移旧容器。

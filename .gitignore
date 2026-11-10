@@ -1,0 +1,23 @@
+# Local inputs, outputs, logs and build intermediates
+/.ready/
+/build/
+/build-*/
+/.logs/
+
+# Binary installers and runtime data
+*.exe
+*.deb
+*.log
+*.log.*
+*.dmp
+
+# Private local configuration and caches
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+__pycache__/
+*.pyc
+*.bak
+*~
+/.claude/settings.local.json

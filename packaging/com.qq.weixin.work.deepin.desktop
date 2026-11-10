@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=WXWork
+Name[zh_CN]=企业微信
+Comment=Tencent WXWork Client (bundled deepin-wine)
+Icon=com.qq.weixin.work.deepin
+Exec="/opt/apps/com.qq.weixin.work.deepin/files/run.sh" %U
+Categories=Network;InstantMessaging;Chat;
+StartupWMClass=wxwork.exe
+StartupNotify=true
+Actions=update;
+
+[Desktop Action update]
+Name=Update compatibility mode (web pages may be unavailable)
+Name[zh_CN]=更新兼容模式（内嵌网页可能不可用）
+Exec="/opt/apps/com.qq.weixin.work.deepin/files/run.sh" --update

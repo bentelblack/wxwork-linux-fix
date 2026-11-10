@@ -1,0 +1,12 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Fonts]
+"WenQuanYi Micro Hei (TrueType)"="C:\\windows\\Fonts\\wqy-microhei.ttc"
+"WenQuanYi Micro Hei Mono (TrueType)"="C:\\windows\\Fonts\\wqy-microhei.ttc"
+
+[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Fonts]
+"WenQuanYi Micro Hei (TrueType)"="C:\\windows\\Fonts\\wqy-microhei.ttc"
+"WenQuanYi Micro Hei Mono (TrueType)"="C:\\windows\\Fonts\\wqy-microhei.ttc"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"winemenubuilder.exe"=""
