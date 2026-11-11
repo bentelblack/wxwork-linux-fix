@@ -77,7 +77,7 @@ else
     VERSION=unknown
     DEB_VERSION=0.0.0.0+unknown
 fi
-OUT=$BUILD/${PKG}_${VERSION}_amd64.deb
+OUT_STEM=${PKG}_${VERSION}_amd64
 log "企业微信安装材料：$EXE；包版本：$VERSION"
 
 WINE_NAME=deepin-wine10-stable_10.14deepin14_amd64.deb
@@ -188,6 +188,7 @@ for path, package in zip(sys.argv[1:], expected):
     actual = subprocess.check_output(['dpkg-deb', '-f', path, 'Package'], text=True).strip()
     if actual != package:
         raise SystemExit(f'输入 deb 不匹配：{path}: {actual} != {package}')
+PY
 log '所有构建材料已就绪并完成软件包类型校验'
 BUILD_OK=0
 PREFIX_ACTIVE=0
@@ -208,6 +209,7 @@ cleanup() {
     exit "$status"
 }
 trap cleanup EXIT
+mkdir -p -- "$WORK"
 step() { log "== [$1/9] $2 =="; }
 
 step 1 '提取配套 Wine、官方应用与辅助组件'
@@ -372,45 +374,72 @@ size=$(du -sk "$ROOT" --exclude=DEBIAN | cut -f1)
 sed -i "s/^Installed-Size: .*/Installed-Size: $size/" "$ROOT/DEBIAN/control"
 [ -z "$(find "$ROOT" -type f -links +1 -print -quit)" ] || { printf '%s\n' 'deb 解包目录包含硬链接' >&2; exit 1; }
 
-step 9 '构建临时 deb、验证布局和校验和后发布'
-PACKAGE=$WORK/package.deb
-fakeroot dpkg-deb -Zxz -b "$ROOT" "$PACKAGE"
-[ "$(dpkg-deb -f "$PACKAGE" Package)" = "$PKG" ] || { printf '%s\n' 'deb 包名不匹配' >&2; exit 1; }
-[ "$(dpkg-deb -f "$PACKAGE" Version)" = "$DEB_VERSION" ] || { printf '%s\n' 'deb 版本不匹配' >&2; exit 1; }
-mkdir "$WORK/package-check"
-dpkg-deb -x "$PACKAGE" "$WORK/package-check"
-mkdir "$WORK/package-check/DEBIAN"
-dpkg-deb -e "$PACKAGE" "$WORK/package-check/DEBIAN"
-CHECK_FILES=$WORK/package-check$INST
-[ -d "$CHECK_FILES/wine" ] && [ ! -L "$CHECK_FILES/wine" ] \
-    && [ -x "$CHECK_FILES/wine/bin/wine" ] \
-    && [ -s "$CHECK_FILES/dlls/wineserver" ] \
-    || { printf '%s\n' 'deb 内 Wine 目录检查失败' >&2; exit 1; }
-grep -Fq 'COMPAT=/opt/deepin-wine10-stable' "$WORK/package-check/DEBIAN/postinst" \
-    || { printf '%s\n' 'postinst 未配置 Wine 编译路径兼容链接' >&2; exit 1; }
-grep -Fq 'ln -s "$F/wine" "$COMPAT"' "$WORK/package-check/DEBIAN/postinst" \
-    || { printf '%s\n' 'postinst 未创建包内 Wine 兼容链接' >&2; exit 1; }
-sha256sum "$PACKAGE" > "$WORK/package.deb.sha256"
-( cd "$WORK" && sha256sum -c package.deb.sha256 )
-if apt-get install -s "$PACKAGE" > "$WORK/apt-simulation.txt" 2>&1; then
-    grep -E '^(Inst|Conf)' "$WORK/apt-simulation.txt" || true
-else
-    printf '提示：apt 依赖模拟失败；详见 %s\n' "$WORK/apt-simulation.txt"
-fi
+step 9 '构建并验证两个修复变体后发布'
+for variant in fixed-webview fixed-webview-level; do
+    if [ "$variant" = fixed-webview-level ]; then
+        install -m 755 "$REPO/scripts/wxwork-window-stack.py" "$FILES/wxwork-window-stack.py"
+        summary='Tencent WXWork with webview and window stacking fixes'
+    else
+        summary='Tencent WXWork with webview fix'
+    fi
+    sed -e "s/@VERSION@/$DEB_VERSION/" \
+        -e "s/^Description:.*/Description: $summary/" \
+        "$REPO/packaging/DEBIAN/control" > "$ROOT/DEBIAN/control"
+    printf 'X-WXWork-Fix: %s\n' "$variant" >> "$ROOT/DEBIAN/control"
+    size=$(du -sk "$ROOT" --exclude=DEBIAN | cut -f1)
+    sed -i "s/^Installed-Size: .*/Installed-Size: $size/" "$ROOT/DEBIAN/control"
+    name=$OUT_STEM.$variant.deb
+    PACKAGE=$WORK/$name
+    fakeroot dpkg-deb -Zxz -b "$ROOT" "$PACKAGE"
+    [ "$(dpkg-deb -f "$PACKAGE" Package)" = "$PKG" ] \
+        && [ "$(dpkg-deb -f "$PACKAGE" Version)" = "$DEB_VERSION" ] \
+        && [ "$(dpkg-deb -f "$PACKAGE" X-WXWork-Fix)" = "$variant" ] \
+        || { printf '%s\n' 'deb 元数据不匹配' >&2; exit 1; }
+    CHECK=$WORK/package-check
+    mkdir "$CHECK"
+    dpkg-deb -x "$PACKAGE" "$CHECK"
+    mkdir "$CHECK/DEBIAN"
+    dpkg-deb -e "$PACKAGE" "$CHECK/DEBIAN"
+    CHECK_FILES=$CHECK$INST
+    [ -d "$CHECK_FILES/wine" ] && [ ! -L "$CHECK_FILES/wine" ] \
+        && [ -x "$CHECK_FILES/wine/bin/wine" ] \
+        && [ -s "$CHECK_FILES/dlls/wineserver" ] \
+        && [ -x "$CHECK_FILES/run.sh" ] \
+        || { printf '%s\n' 'deb 内运行文件检查失败' >&2; exit 1; }
+    if [ "$variant" = fixed-webview-level ]; then
+        [ -x "$CHECK_FILES/wxwork-window-stack.py" ] || { printf '%s\n' '层级修复辅助程序缺失' >&2; exit 1; }
+    else
+        [ ! -e "$CHECK_FILES/wxwork-window-stack.py" ] || { printf '%s\n' '网页修复包不应包含层级辅助程序' >&2; exit 1; }
+    fi
+    grep -Fq 'COMPAT=/opt/deepin-wine10-stable' "$CHECK/DEBIAN/postinst" \
+        && grep -Fq 'ln -s "$F/wine" "$COMPAT"' "$CHECK/DEBIAN/postinst" \
+        || { printf '%s\n' 'postinst 兼容链接配置缺失' >&2; exit 1; }
+    rm -rf -- "$CHECK"
+    ( cd "$WORK" && sha256sum "$name" > "$name.sha256" && sha256sum -c "$name.sha256" )
+    if apt-get install -s "$PACKAGE" > "$WORK/apt-$variant.txt" 2>&1; then
+        grep -E '^(Inst|Conf)' "$WORK/apt-$variant.txt" || true
+    else
+        printf '提示：apt 依赖模拟失败；详见 %s\n' "$WORK/apt-$variant.txt"
+    fi
+done
 
 STAMP=$(date +%Y%m%d-%H%M%S-%N)
 mkdir -p "$BUILD/backup"
-for old in "$OUT" "$OUT.sha256"; do
-    [ -e "$old" ] || [ -L "$old" ] || continue
-    name=$(basename -- "$old")
-    saved=$BUILD/backup/$name-$STAMP
-    [ ! -e "$saved" ] && [ ! -L "$saved" ] || { printf '备份文件已存在：%s\n' "$saved" >&2; exit 1; }
-    mv -- "$old" "$saved"
-    printf '已备份同版本旧产物：%s -> %s\n' "$old" "$saved"
+for variant in fixed-webview fixed-webview-level; do
+    OUT=$BUILD/$OUT_STEM.$variant.deb
+    for old in "$OUT" "$OUT.sha256"; do
+        [ -e "$old" ] || [ -L "$old" ] || continue
+        name=$(basename -- "$old")
+        saved=$BUILD/backup/$name-$STAMP
+        [ ! -e "$saved" ] && [ ! -L "$saved" ] || { printf '备份文件已存在：%s\n' "$saved" >&2; exit 1; }
+        mv -- "$old" "$saved"
+        printf '已备份同版本旧产物：%s -> %s\n' "$old" "$saved"
+    done
 done
-mv -- "$PACKAGE" "$OUT"
-( cd "$BUILD" && sha256sum "$(basename -- "$OUT")" > "$(basename -- "$OUT").sha256" \
-    && sha256sum -c "$(basename -- "$OUT").sha256" )
-printf '构建产物：%s\n' "$OUT"
-ls -lh "$OUT" "$OUT.sha256"
+for variant in fixed-webview fixed-webview-level; do
+    name=$OUT_STEM.$variant.deb
+    mv -- "$WORK/$name" "$WORK/$name.sha256" "$BUILD/"
+    ( cd "$BUILD" && sha256sum -c "$name.sha256" )
+    ls -lh "$BUILD/$name" "$BUILD/$name.sha256"
+done
 BUILD_OK=1

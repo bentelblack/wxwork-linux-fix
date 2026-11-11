@@ -1,7 +1,7 @@
 Package: com.qq.weixin.work.deepin
 Version: @VERSION@
 Architecture: amd64
-Maintainer: WXWork Bundle Maintainer <maintainer@example.com>
+Maintainer: WXWork Bundle Maintainer <blackbentel@163.com>
 Installed-Size: 0
 Section: non-free/net
 Priority: optional

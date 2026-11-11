@@ -73,7 +73,12 @@ for proc in Path('/proc').iterdir():
 PY
 
 WORK=
+STACK_PID=
 cleanup() {
+    [ -z "$STACK_PID" ] || {
+        kill "$STACK_PID" 2>/dev/null || true
+        wait "$STACK_PID" 2>/dev/null || true
+    }
     [ -z "$WORK" ] || rm -rf -- "$WORK"
 }
 trap cleanup EXIT
@@ -213,6 +218,10 @@ if [ "$MODE" = update ]; then
     notify '更新兼容模式：内嵌网页可能不可用；新版在线更新仍需验证，完成后请退出并用日常入口重开。'
 fi
 cd "$PREFIX/drive_c/Program Files (x86)/WXWork"
+if [ -f "$APPDIR/wxwork-window-stack.py" ]; then
+    python3 -I "$APPDIR/wxwork-window-stack.py" >/dev/null 2>&1 &
+    STACK_PID=$!
+fi
 status=0
 if [ -n "$INSTALLER" ]; then
     "$WINE" "$INSTALLER" "$@" || status=$?

@@ -1,4 +1,5 @@
 import io
+import importlib.util
 import os
 import pwd
 from pathlib import Path
@@ -10,6 +11,10 @@ import tempfile
 import unittest
 
 REPO = Path(__file__).resolve().parents[1]
+STACK_SPEC = importlib.util.spec_from_file_location(
+    'wxwork_window_stack', REPO / 'scripts/wxwork-window-stack.py')
+STACK_HELPER = importlib.util.module_from_spec(STACK_SPEC)
+STACK_SPEC.loader.exec_module(STACK_HELPER)
 
 
 class RuntimeTests(unittest.TestCase):
@@ -29,6 +34,7 @@ class RuntimeTests(unittest.TestCase):
         notify.write_text('#!/bin/sh\nexit 0\n')
         notify.chmod(0o755)
         shutil.copy(REPO / 'scripts/run.sh', self.app / 'run.sh')
+        shutil.copy(REPO / 'scripts/wxwork-window-stack.py', self.app / 'wxwork-window-stack.py')
         for mode in ['wine', 'wine-update']:
             engine = self.app / mode
             (engine / 'bin').mkdir(parents=True)
@@ -65,8 +71,34 @@ class RuntimeTests(unittest.TestCase):
     def run_entry(self, *args, fail=False):
         env = os.environ.copy()
         env.pop('WINEPREFIX', None)
+        env.pop('DISPLAY', None)
+        env.pop('WAYLAND_DISPLAY', None)
         env.update(PATH=str(self.bin) + os.pathsep + env['PATH'], HOME=str(self.home), WXWORK_PREFIX=str(self.prefix), TEST_TRACE=str(self.trace), TEST_FAIL='yes' if fail else 'no')
         return subprocess.run(['bash', str(self.app / 'run.sh'), *args], env=env, capture_output=True, text=True, timeout=20)
+
+    def test_window_stack_filter_targets_only_wxwork_button_transient(self):
+        match = STACK_HELPER.is_button_strip
+        self.assertTrue(match(1080, 28, 1080, 760, True, True, True))
+        self.assertFalse(match(1080, 28, 1080, 760, False, True, True))
+        self.assertFalse(match(1080, 28, 1080, 760, True, False, True))
+        self.assertFalse(match(1080, 28, 1080, 760, True, True, False))
+        self.assertFalse(match(1080, 120, 1080, 760, True, True, True))
+        self.assertFalse(match(1079, 28, 1080, 760, True, True, True))
+        self.assertTrue(STACK_HELPER.matches_wxwork('wxwork.exe', 'com.qq.weixin.work.deepin'))
+        self.assertFalse(STACK_HELPER.matches_wxwork('wxworkweb.exe', 'com.qq.weixin.work.deepin'))
+
+    def test_window_stack_helper_is_started_and_stopped_with_wine(self):
+        source = (REPO / 'scripts/run.sh').read_text()
+        self.assertIn('python3 -I "$APPDIR/wxwork-window-stack.py"', source)
+        self.assertIn('kill "$STACK_PID"', source)
+        self.assertLess(source.index('STACK_PID=$!'), source.index('"$WINE" "$EXE"'))
+
+    def test_webview_only_runs_without_stack_helper(self):
+        (self.app / 'wxwork-window-stack.py').unlink()
+        result = self.run_entry()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        source = (REPO / 'scripts/run.sh').read_text()
+        self.assertIn('if [ -f "$APPDIR/wxwork-window-stack.py" ]; then', source)
 
     def test_deploy_preserves_rules_and_installs_font(self):
         result = self.run_entry()
@@ -188,6 +220,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn('MODULE=lib/wine/i386-windows/kernelbase.dll', source)
         self.assertNotIn('relocate-engine', source)
         self.assertNotIn('/opt/wxwork-wine-bundle10', source)
+        self.assertIn('wxwork-window-stack.py', source)
 
     def test_postinst_follows_bundled_engine_link(self):
         engine = self.root / 'bundled-engine'
@@ -212,6 +245,90 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotEqual(daily.stat().st_ino, update.stat().st_ino)
         self.assertTrue((self.app / 'wine-update/bin/wine').is_file())
         self.assertFalse((self.app / 'wine-update').is_symlink())
+
+
+class PackageVariantTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='wxwork-package-test-')
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.work = self.base / 'work'
+        self.root = self.work / 'root'
+        self.build = self.base / 'build'
+        self.build.mkdir()
+        self.inst = '/opt/apps/com.qq.weixin.work.deepin/files'
+        self.files = self.root / self.inst.lstrip('/')
+        (self.files / 'wine/bin').mkdir(parents=True)
+        (self.files / 'dlls').mkdir()
+        for name in ('wine/bin/wine', 'dlls/wineserver', 'run.sh'):
+            path = self.files / name
+            path.write_text('#!/bin/sh\nexit 0\n')
+            path.chmod(0o755)
+        (self.root / 'DEBIAN').mkdir()
+        shutil.copy(REPO / 'packaging/DEBIAN/postinst', self.root / 'DEBIAN/postinst')
+        (self.root / 'DEBIAN/postinst').chmod(0o755)
+        self.bin = self.base / 'bin'
+        self.bin.mkdir()
+        apt = self.bin / 'apt-get'
+        apt.write_text('#!/bin/sh\nexit 0\n')
+        apt.chmod(0o755)
+        self.stem = 'com.qq.weixin.work.deepin_1.2.3.4_amd64'
+        self.variants = ('fixed-webview', 'fixed-webview-level')
+
+    def run_packaging(self):
+        source = (REPO / 'scripts/build.sh').read_text()
+        stage = "step 9 '" + source.split("step 9 '", 1)[1]
+        env = os.environ.copy()
+        env.update(REPO=str(REPO), ROOT=str(self.root), WORK=str(self.work),
+                   FILES=str(self.files), BUILD=str(self.build), INST=self.inst,
+                   PKG='com.qq.weixin.work.deepin', DEB_VERSION='1.2.3.4',
+                   OUT_STEM=self.stem, PATH=str(self.bin) + os.pathsep + env['PATH'])
+        return subprocess.run(['bash', '-c', 'set -euo pipefail\nstep() { :; }\n' + stage],
+                              env=env, capture_output=True, text=True, timeout=60)
+
+    def test_real_two_package_contents_metadata_and_backups(self):
+        result = self.run_packaging()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for variant in self.variants:
+            name = f'{self.stem}.{variant}.deb'
+            package = self.build / name
+            fields = subprocess.check_output(
+                ['dpkg-deb', '-f', str(package), 'Package', 'Version', 'X-WXWork-Fix'], text=True)
+            self.assertIn('Package: com.qq.weixin.work.deepin\n', fields)
+            self.assertIn('Version: 1.2.3.4\n', fields)
+            self.assertIn(f'X-WXWork-Fix: {variant}\n', fields)
+            dest = self.base / variant
+            subprocess.run(['dpkg-deb', '-x', str(package), str(dest)], check=True)
+            helper = dest / self.inst.lstrip('/') / 'wxwork-window-stack.py'
+            self.assertEqual(helper.exists(), variant == 'fixed-webview-level')
+            if helper.exists():
+                self.assertTrue(os.access(helper, os.X_OK))
+            subprocess.run(['sha256sum', '-c', name + '.sha256'], cwd=self.build,
+                           check=True, capture_output=True)
+        base_files = self.base / 'fixed-webview' / self.inst.lstrip('/')
+        level_files = self.base / 'fixed-webview-level' / self.inst.lstrip('/')
+        for path in base_files.rglob('*'):
+            if path.is_file():
+                self.assertEqual(path.read_bytes(), (level_files / path.relative_to(base_files)).read_bytes())
+        (self.files / 'wxwork-window-stack.py').unlink()
+        result = self.run_packaging()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(list((self.build / 'backup').iterdir())), 4)
+
+    def test_second_variant_failure_does_not_publish_or_replace_outputs(self):
+        for variant in self.variants:
+            (self.build / f'{self.stem}.{variant}.deb').write_text('existing package')
+        tool = self.bin / 'dpkg-deb'
+        tool.write_text('#!/bin/bash\nif [[ "$*" == *" -b "* ]] && '
+                        '[ -f "$FILES/wxwork-window-stack.py" ]; then exit 9; fi\n'
+                        f'exec "{shutil.which("dpkg-deb")}" "$@"\n')
+        tool.chmod(0o755)
+        result = self.run_packaging()
+        self.assertNotEqual(result.returncode, 0)
+        for variant in self.variants:
+            self.assertEqual((self.build / f'{self.stem}.{variant}.deb').read_text(),
+                             'existing package')
+        self.assertFalse((self.build / 'backup').exists())
 
 
 if __name__ == '__main__':

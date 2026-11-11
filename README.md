@@ -15,9 +15,20 @@
 
 详见 [解决方案](docs/02-解决方案.md)和[问题原因](docs/01-问题原因.md)。
 
+## 安装包选择
+
+每次运行 `scripts/build.sh` 都会在 `build/` 生成以下两个包及各自的 `.sha256` 文件（以 5.0.13.6005 为例）：
+
+| 文件 | 用途 | 适用选择 |
+|---|---|---|
+| `com.qq.weixin.work.deepin_5.0.13.6005_amd64.fixed-webview.deb` | 修复内嵌网页，保留字体与更新兼容入口；不包含窗口层级辅助程序 | 只需要网页修复，或桌面环境未验证层级修复时优先选择 |
+| `com.qq.weixin.work.deepin_5.0.13.6005_amd64.fixed-webview-level.deb` | 包含上述修复，另将企微独立按钮条交给窗口管理器管理，避免主体被遮住后按钮仍浮在上方、拦截点击 | 在已验证环境遇到该窗口层级问题时选择 |
+
+两包的 Debian 包名均为 `com.qq.weixin.work.deepin`，版本相同，**二选一、覆盖替换，不同时安装**。它们共用安装目录和用户前缀；切换变体不会清空账号数据。层级版只额外包含 `wxwork-window-stack.py`，通过窗口事件处理按钮条，不做定时轮询或焦点监听，也不安装 GNOME 扩展。
+
 ## 验证与限制
 
-本机环境：Debian 13、GNOME / Wayland、XWayland、Intel 核显。
+已验证环境：**Debian 13 amd64、GNOME Shell 48.7 / Mutter、Wayland 会话、企微通过 XWayland 运行、Intel 核显**；企微为 5.0.13.6005，deepin Wine 为 10.14deepin14。层级修复使用 X11 接口，但其他 X11 窗口管理器、KDE/XFCE、其他 GNOME 版本尚未验证；不能处理原生 Wayland 窗口。
 
 | 项目 | 状态 |
 |---|---|
@@ -26,7 +37,9 @@
 | 邮件、在线文档及其他内嵌页面 | 尚未逐项验收 |
 | 字体 | 字体文件和注册表登记已在独立前缀验证；视觉效果待桌面确认 |
 | 在线更新 | 历史记录显示定制 i386 `kernelbase` 可能导致 `EINVAL`；保留原版引擎入口，新组合在线更新仍待验证 |
-| 最终 deb 的安装、升级和卸载 | 以当前构建日志和产物检查结果为准；脚本测试不等于桌面验收 |
+| 窗口层级（仅 level 版） | 实际按钮窗接管后，用户确认关闭/最小化按钮和切换 Claude 时的层级正常；自动程序在重启、重建窗口及其他桌面的长期表现仍需验收 |
+| 双包构建 | 两包完整构建及 SHA-256 校验通过；逐文件核对公共载荷相同，仅 level 版额外带辅助程序；19 项脚本/轻量打包测试通过 |
+| 最终 deb 的安装、升级和卸载 | 双变体切换与安装后界面仍需实测；脚本测试不等于桌面验收 |
 
 不把历史 `CreateWindowEx`、整套模块覆盖或在线更新结果直接外推到当前组合。其他发行版、桌面或新版本材料都需重新验证。
 
@@ -36,15 +49,35 @@
 
 ## 安装与运行
 
-以下是修订脚本的目标使用方式；使用前应确认 deb 确实由修订脚本构建并完成验收，旧 Release 不能据此视为已更新。
+以下命令在安装包所在目录执行。先从托盘完全退出企微，选择一个包并校验；旧 Release 不会自动获得这些修复。
+
+仅网页修复版：
 
 ```bash
-sha256sum -c com.qq.weixin.work.deepin_5.0.13.6005_amd64.deb.sha256
+sha256sum -c com.qq.weixin.work.deepin_5.0.13.6005_amd64.fixed-webview.deb.sha256
 ```
 
 ```bash
-sudo apt install ./com.qq.weixin.work.deepin_5.0.13.6005_amd64.deb
+sudo apt install --reinstall ./com.qq.weixin.work.deepin_5.0.13.6005_amd64.fixed-webview.deb
 ```
+
+网页及层级修复版：
+
+```bash
+sha256sum -c com.qq.weixin.work.deepin_5.0.13.6005_amd64.fixed-webview-level.deb.sha256
+```
+
+```bash
+sudo apt install --reinstall ./com.qq.weixin.work.deepin_5.0.13.6005_amd64.fixed-webview-level.deb
+```
+
+同版本切换也使用 `--reinstall`，文件名不同不会使 apt 视作不同软件。与 deepin 官方包同名，二者也会互相替换；官方仓库提供更高版本时可能覆盖修复包，更新前请核对来源。安装后可查询当前变体：
+
+```bash
+dpkg-query -W -f='${X-WXWork-Fix}\n' com.qq.weixin.work.deepin
+```
+
+输出应为 `fixed-webview` 或 `fixed-webview-level`；官方包不一定带此字段。
 
 - `~/.deepinwine/WXWork-official-bundled`：首次启动部署的独立官方前缀；卸载软件包不会自动删除用户数据。
 
